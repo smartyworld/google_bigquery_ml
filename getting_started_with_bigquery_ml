@@ -1,8 +1,8 @@
-## this file contains the snippets used in this short course
+-- this file contains the snippets used in this short course
 
-## task 1 - creating dataset - NA
+-- task 1 - creating dataset - NA
 
-## task 2 - create the model from data in a public dataset
+-- task 2 - create the model from data in a public dataset
 # standardSQL
 CREATE OR REPLACE MODEL `bqml_lab.sample_model`
 OPTIONS(model_type='logistic_reg') AS
@@ -18,7 +18,7 @@ WHERE
   _TABLE_SUFFIX BETWEEN '20160801' AND '20170631'
 LIMIT 100000;
 
-## task 3 - evaluate the model you just created
+-- task 3 - evaluate the model you just created
 #standardSQL
 SELECT
   *
@@ -35,12 +35,12 @@ FROM
 WHERE
   _TABLE_SUFFIX BETWEEN '20170701' AND '20170801'));
 
-  ## produced the following result (threshold not included for some reason..?):
-  ## precision	recall	accuracy	f1_score	log_loss	roc_auc
-  ## 0.45695364238410596	0.12849162011173185	0.98520869191049909	0.2005813953488372	0.045534569291173006	0.98176123876123877
+  -- produced the following result (threshold not included for some reason..?):
+  -- precision	recall	accuracy	f1_score	log_loss	roc_auc
+  -- 0.45695364238410596	0.12849162011173185	0.98520869191049909	0.2005813953488372	0.045534569291173006	0.98176123876123877
 
-## task 4 - using the model
-## predict purchases per country
+-- task 4 - using the model
+-- predict purchases per country
 #standardSQL
 SELECT
   country,
@@ -60,7 +60,7 @@ GROUP BY country
 ORDER BY total_predicted_purchases DESC
 LIMIT 10;
 
-## predict purchases per user
+-- predict purchases per user
 #standardSQL
 SELECT
   fullVisitorId,
@@ -81,4 +81,4 @@ GROUP BY fullVisitorId
 ORDER BY total_predicted_purchases DESC
 LIMIT 10;
 
-## task 5 - NA
+-- task 5 - NA
