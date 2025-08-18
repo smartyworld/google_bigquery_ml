@@ -36,5 +36,92 @@ GROUP BY
 ORDER BY
   1
 
-  --
+  -- results are:
+  /*
+hour	speed
+0	15.8
+1	16.3
+2	16.8
+3	17.5
+4	20.0
+5	21.6
+6	17.6
+7	13.7
+8	11.6
+9	11.4
+10	11.5
+11	11.3
+12	11.2
+13	11.3
+14	11.2
+15	11.0
+16	11.5
+17	11.2
+18	11.1
+19	11.8
+20	12.9
+21	13.6
+22	14.1
+23	14.9
+  */
 
+-- note the speed is measured in miles per hour
+
+-- task 2 - objective is to predict teh price of the taxi fare given the other details known about it
+
+-- task 3: select features and create your training dataset
+/*
+trhese are the features we are going to look at using for the prediction:
+Tolls Amount
+Fare Amount
+Hour of Day
+Pick up address
+Drop off address
+Number of passengers
+*/
+
+#standardSQL
+WITH params AS (
+    SELECT
+    1 AS TRAIN,
+    2 AS EVAL
+    ),
+
+  daynames AS
+    (SELECT ['Sun', 'Mon', 'Tues', 'Wed', 'Thurs', 'Fri', 'Sat'] AS daysofweek),
+
+  taxitrips AS (
+  SELECT
+    (tolls_amount + fare_amount) AS total_fare,
+    daysofweek[ORDINAL(EXTRACT(DAYOFWEEK FROM pickup_datetime))] AS dayofweek,
+    EXTRACT(HOUR FROM pickup_datetime) AS hourofday,
+    pickup_longitude AS pickuplon,
+    pickup_latitude AS pickuplat,
+    dropoff_longitude AS dropofflon,
+    dropoff_latitude AS dropofflat,
+    passenger_count AS passengers
+  FROM
+    `nyc-tlc.yellow.trips`, daynames, params
+  WHERE
+    trip_distance > 0 AND fare_amount > 0
+    AND MOD(ABS(FARM_FINGERPRINT(CAST(pickup_datetime AS STRING))),1000) = params.TRAIN
+  )
+
+  SELECT *
+  FROM taxitrips
+
+  --results looks like as follows (top few rows only)
+  /*
+total_fare	dayofweek	hourofday	pickuplon	pickuplat	dropofflon	dropofflat	passengers
+4.5	Tues	0	0.0	0.0	0.0	0.0	1
+4.5	Thurs	0	-74.005805	40.736391	-73.994223	40.732826	1
+5.0	Fri	0	-73.98656	40.766772	-73.996032	40.76084	1
+6.5	Wed	0	0.0	0.0	0.0	0.0	1
+6.5	Wed	0	-73.989237	40.729997	-74.003902	40.720817	5
+7.0	Sat	0	-74.013585	40.714242	-74.014323	40.702732	1
+11.5	Thurs	0	-73.970852	40.75192	-73.95821	40.773252	1
+11.5	Sat	0	-73.976228	40.791202	-73.98368	40.764405	1
+13.5	Sat	0	-73.984183	40.77532	-74.004382	40.734027	5
+  */
+
+--
