@@ -124,4 +124,277 @@ total_fare	dayofweek	hourofday	pickuplon	pickuplat	dropofflon	dropofflat	passeng
 13.5	Sat	0	-73.984183	40.77532	-74.004382	40.734027	5
   */
 
---
+-- task 4 - empty dataset object created using studio / console
+
+-- task 5 - select a bigquery ml model type and specify options
+
+CREATE or REPLACE MODEL taxi.taxifare_model
+OPTIONS
+  (model_type='linear_reg', labels=['total_fare']) AS
+
+WITH params AS (
+    SELECT
+    1 AS TRAIN,
+    2 AS EVAL
+    ),
+
+  daynames AS
+    (SELECT ['Sun', 'Mon', 'Tues', 'Wed', 'Thurs', 'Fri', 'Sat'] AS daysofweek),
+
+  taxitrips AS (
+  SELECT
+    (tolls_amount + fare_amount) AS total_fare,
+    daysofweek[ORDINAL(EXTRACT(DAYOFWEEK FROM pickup_datetime))] AS dayofweek,
+    EXTRACT(HOUR FROM pickup_datetime) AS hourofday,
+    pickup_longitude AS pickuplon,
+    pickup_latitude AS pickuplat,
+    dropoff_longitude AS dropofflon,
+    dropoff_latitude AS dropofflat,
+    passenger_count AS passengers
+  FROM
+    `nyc-tlc.yellow.trips`, daynames, params
+  WHERE
+    trip_distance > 0 AND fare_amount > 0
+    AND MOD(ABS(FARM_FINGERPRINT(CAST(pickup_datetime AS STRING))),1000) = params.TRAIN
+  )
+
+  SELECT *
+  FROM taxitrips
+
+  -- task 6 - evaluate classification model performance (should this say "regression" model instead)?
+  -- note MSE (Mean Square Error) is a queryable field in a BigQuery Machine Learning (bqml) Model object. SQRT() takes the square root of it (MSE --> RMSE)
+
+#standardSQL
+SELECT
+  SQRT(mean_squared_error) AS rmse
+FROM
+  ML.EVALUATE(MODEL taxi.taxifare_model,
+  (
+
+  WITH params AS (
+    SELECT
+    1 AS TRAIN,
+    2 AS EVAL
+    ),
+
+  daynames AS
+    (SELECT ['Sun', 'Mon', 'Tues', 'Wed', 'Thurs', 'Fri', 'Sat'] AS daysofweek),
+
+  taxitrips AS (
+  SELECT
+    (tolls_amount + fare_amount) AS total_fare,
+    daysofweek[ORDINAL(EXTRACT(DAYOFWEEK FROM pickup_datetime))] AS dayofweek,
+    EXTRACT(HOUR FROM pickup_datetime) AS hourofday,
+    pickup_longitude AS pickuplon,
+    pickup_latitude AS pickuplat,
+    dropoff_longitude AS dropofflon,
+    dropoff_latitude AS dropofflat,
+    passenger_count AS passengers
+  FROM
+    `nyc-tlc.yellow.trips`, daynames, params
+  WHERE
+    trip_distance > 0 AND fare_amount > 0
+    AND MOD(ABS(FARM_FINGERPRINT(CAST(pickup_datetime AS STRING))),1000) = params.EVAL
+  )
+
+  SELECT *
+  FROM taxitrips
+
+  ))
+
+  -- result from the above is:
+  /*
+  rmse
+9.4766370197702088
+*/
+
+-- task 7 - predict taxi fare amount
+
+#standardSQL
+SELECT
+*
+FROM
+  ml.PREDICT(MODEL `taxi.taxifare_model`,
+   (
+
+ WITH params AS (
+    SELECT
+    1 AS TRAIN,
+    2 AS EVAL
+    ),
+
+  daynames AS
+    (SELECT ['Sun', 'Mon', 'Tues', 'Wed', 'Thurs', 'Fri', 'Sat'] AS daysofweek),
+
+  taxitrips AS (
+  SELECT
+    (tolls_amount + fare_amount) AS total_fare,
+    daysofweek[ORDINAL(EXTRACT(DAYOFWEEK FROM pickup_datetime))] AS dayofweek,
+    EXTRACT(HOUR FROM pickup_datetime) AS hourofday,
+    pickup_longitude AS pickuplon,
+    pickup_latitude AS pickuplat,
+    dropoff_longitude AS dropofflon,
+    dropoff_latitude AS dropofflat,
+    passenger_count AS passengers
+  FROM
+    `nyc-tlc.yellow.trips`, daynames, params
+  WHERE
+    trip_distance > 0 AND fare_amount > 0
+    AND MOD(ABS(FARM_FINGERPRINT(CAST(pickup_datetime AS STRING))),1000) = params.EVAL
+  )
+
+  SELECT *
+  FROM taxitrips
+
+));
+
+-- top 5 rows in teh result set look as follows:
+/*
+predicted_total_fare	total_fare	dayofweek	hourofday	pickuplon	pickuplat	dropofflon	dropofflat	passengers
+11.302012786360137	2.5	Wed	8	-73.93715	40.748577	-73.936902	40.74834	1
+11.491422570217765	2.5	Wed	5	-73.77673	40.645402	-73.776795	40.645697	2
+10.833026815176709	2.5	Wed	20	-73.790337	40.646595	0.0	0.0	1
+11.623016896810441	2.5	Thurs	1	-74.001634	40.735834	-74.001634	40.735834	1
+11.212389052332583	3.0	Mon	15	-73.968067	40.759687	-73.967435	40.76055	1
+*/
+
+-- task 8 improving the model
+-- in this example we notice that teh data has some odd outliers that we might do well to avoid inlcuding when we train.
+-- we spot both negative fares as well as fare over $50k!
+
+SELECT
+  COUNT(fare_amount) AS num_fares,
+  MIN(fare_amount) AS low_fare,
+  MAX(fare_amount) AS high_fare,
+  AVG(fare_amount) AS avg_fare,
+  STDDEV(fare_amount) AS stddev
+FROM
+`nyc-tlc.yellow.trips`
+# 1,108,779,463 fares
+
+-- result looks as follows:
+/*
+num_fares	low_fare	high_fare	avg_fare	stddev
+1108779463	-21474808.0	503325.53	11.105718581071878	650.4445803206595
+*/
+
+-- next we limit our dataset to only fares between $6 and $200, as well as trips between particular latlon bounding box (ie stays in NY):
+
+SELECT
+  COUNT(fare_amount) AS num_fares,
+  MIN(fare_amount) AS low_fare,
+  MAX(fare_amount) AS high_fare,
+  AVG(fare_amount) AS avg_fare,
+  STDDEV(fare_amount) AS stddev
+FROM
+`nyc-tlc.yellow.trips`
+WHERE trip_distance > 0 AND fare_amount BETWEEN 6 and 200
+    AND pickup_longitude > -75 #limiting of the distance the taxis travel out
+    AND pickup_longitude < -73
+    AND dropoff_longitude > -75
+    AND dropoff_longitude < -73
+    AND pickup_latitude > 40
+    AND pickup_latitude < 42
+    AND dropoff_latitude > 40
+    AND dropoff_latitude < 42
+    # 827,365,869 fares
+
+/*
+num_fares	low_fare	high_fare	avg_fare	stddev
+827365869	6.0	200.0	12.989136200806955	9.1398077919072858
+*/
+
+--Now we have what we expect to be a better dataset to train on, we train a newer better model - v2:
+
+CREATE OR REPLACE MODEL taxi.taxifare_model_2
+OPTIONS
+  (model_type='linear_reg', labels=['total_fare']) AS
+
+
+WITH params AS (
+    SELECT
+    1 AS TRAIN,
+    2 AS EVAL
+    ),
+
+  daynames AS
+    (SELECT ['Sun', 'Mon', 'Tues', 'Wed', 'Thurs', 'Fri', 'Sat'] AS daysofweek),
+
+  taxitrips AS (
+  SELECT
+    (tolls_amount + fare_amount) AS total_fare,
+    daysofweek[ORDINAL(EXTRACT(DAYOFWEEK FROM pickup_datetime))] AS dayofweek,
+    EXTRACT(HOUR FROM pickup_datetime) AS hourofday,
+    SQRT(POW((pickup_longitude - dropoff_longitude),2) + POW(( pickup_latitude - dropoff_latitude), 2)) as dist, #Euclidean distance between pickup and drop off
+    SQRT(POW((pickup_longitude - dropoff_longitude),2)) as longitude, #Euclidean distance between pickup and drop off in longitude
+    SQRT(POW((pickup_latitude - dropoff_latitude), 2)) as latitude, #Euclidean distance between pickup and drop off in latitude
+    passenger_count AS passengers
+  FROM
+    `nyc-tlc.yellow.trips`, daynames, params
+WHERE trip_distance > 0 AND fare_amount BETWEEN 6 and 200
+    AND pickup_longitude > -75 #limiting of the distance the taxis travel out
+    AND pickup_longitude < -73
+    AND dropoff_longitude > -75
+    AND dropoff_longitude < -73
+    AND pickup_latitude > 40
+    AND pickup_latitude < 42
+    AND dropoff_latitude > 40
+    AND dropoff_latitude < 42
+    AND MOD(ABS(FARM_FINGERPRINT(CAST(pickup_datetime AS STRING))),1000) = params.TRAIN
+  )
+
+  SELECT *
+  FROM taxitrips
+
+  -- evluate this one like we did the first one - with RMSE - 
+
+  SELECT
+  SQRT(mean_squared_error) AS rmse
+FROM
+  ML.EVALUATE(MODEL taxi.taxifare_model_2,
+  (
+
+  WITH params AS (
+    SELECT
+    1 AS TRAIN,
+    2 AS EVAL
+    ),
+
+  daynames AS
+    (SELECT ['Sun', 'Mon', 'Tues', 'Wed', 'Thurs', 'Fri', 'Sat'] AS daysofweek),
+
+  taxitrips AS (
+  SELECT
+    (tolls_amount + fare_amount) AS total_fare,
+    daysofweek[ORDINAL(EXTRACT(DAYOFWEEK FROM pickup_datetime))] AS dayofweek,
+    EXTRACT(HOUR FROM pickup_datetime) AS hourofday,
+    SQRT(POW((pickup_longitude - dropoff_longitude),2) + POW(( pickup_latitude - dropoff_latitude), 2)) as dist, #Euclidean distance between pickup and drop off
+    SQRT(POW((pickup_longitude - dropoff_longitude),2)) as longitude, #Euclidean distance between pickup and drop off in longitude
+    SQRT(POW((pickup_latitude - dropoff_latitude), 2)) as latitude, #Euclidean distance between pickup and drop off in latitude
+    passenger_count AS passengers
+  FROM
+    `nyc-tlc.yellow.trips`, daynames, params
+WHERE trip_distance > 0 AND fare_amount BETWEEN 6 and 200
+    AND pickup_longitude > -75 #limiting of the distance the taxis travel out
+    AND pickup_longitude < -73
+    AND dropoff_longitude > -75
+    AND dropoff_longitude < -73
+    AND pickup_latitude > 40
+    AND pickup_latitude < 42
+    AND dropoff_latitude > 40
+    AND dropoff_latitude < 42
+    AND MOD(ABS(FARM_FINGERPRINT(CAST(pickup_datetime AS STRING))),1000) = params.EVAL
+  )
+
+  SELECT *
+  FROM taxitrips
+
+  ))
+
+  /*
+rmse
+5.124652777768981
+  */
+
+  -- note this is better than the previous $9.4766
+
