@@ -1,7 +1,9 @@
 -- 4th lab of 5 in "create ML models with bigquery" course
 
---
-
+-- task 1 opeing big query console - very basic
+-- task 2 examine NCSS March madness - data about college basketball tournaments
+-- task 3 adding public datasets - either by searching in "Public Datasets" or adding project "bigquery-public-data" as a "starred" project
+-- starring a project appears to mean having it listed, along with its datasets and tables therein, in BigQuery Studio/console
 -- task 4 - write query to detmine available seasons and games
 
 SELECT
@@ -12,4 +14,5 @@ SELECT
  GROUP BY season
  ORDER BY season # default is Ascending (low to high)
 
- -- 
+ -- task 5 - understanding machine learning features and labels
+-- inlcudes quesitions about what we know to build the model and what we need to predict
