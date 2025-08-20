@@ -16,3 +16,184 @@ SELECT
 
  -- task 5 - understanding machine learning features and labels
 -- inlcudes quesitions about what we know to build the model and what we need to predict
+
+-- task 6 - create a labelled machine learning dataset
+-- the table has one record per game and tells you who won and who lost in it
+-- for our ml project, we need 2 records per game - one for the winner and another for the loser
+-- this query creates a new table structure that can be used. Note the UNION ALL to get winner record then loser record...
+-- and also us creating the "win or lose" labelled column (binary classifier) to use to train on
+# create a row for the winning team
+SELECT
+  # features
+  season, # ex: 2015 season has March 2016 tournament games
+  round, # sweet 16
+  days_from_epoch, # how old is the game
+  game_date,
+  day, # Friday
+
+  'win' AS label, # our label
+
+  win_seed AS seed, # ranking
+  win_market AS market,
+  win_name AS name,
+  win_alias AS alias,
+  win_school_ncaa AS school_ncaa,
+  # win_pts AS points,
+
+  lose_seed AS opponent_seed, # ranking
+  lose_market AS opponent_market,
+  lose_name AS opponent_name,
+  lose_alias AS opponent_alias,
+  lose_school_ncaa AS opponent_school_ncaa
+  # lose_pts AS opponent_points
+
+FROM `bigquery-public-data.ncaa_basketball.mbb_historical_tournament_games`
+
+UNION ALL
+
+# create a separate row for the losing team
+SELECT
+# features
+  season,
+  round,
+  days_from_epoch,
+  game_date,
+  day,
+
+  'loss' AS label, # our label
+
+  lose_seed AS seed, # ranking
+  lose_market AS market,
+  lose_name AS name,
+  lose_alias AS alias,
+  lose_school_ncaa AS school_ncaa,
+  # lose_pts AS points,
+
+  win_seed AS opponent_seed, # ranking
+  win_market AS opponent_market,
+  win_name AS opponent_name,
+  win_alias AS opponent_alias,
+  win_school_ncaa AS opponent_school_ncaa
+  # win_pts AS opponent_points
+
+FROM
+`bigquery-public-data.ncaa_basketball.mbb_historical_tournament_games`
+
+-- create the machine leanring model (iteration 1) with BigQuery ML
+
+CREATE OR REPLACE MODEL
+  `bracketology.ncaa_model`
+OPTIONS
+  ( model_type='logistic_reg') AS
+
+# create a row for the winning team
+SELECT
+  # features
+  season,
+
+  'win' AS label, # our label
+
+  win_seed AS seed, # ranking
+  win_school_ncaa AS school_ncaa,
+
+  lose_seed AS opponent_seed, # ranking
+  lose_school_ncaa AS opponent_school_ncaa
+
+FROM `bigquery-public-data.ncaa_basketball.mbb_historical_tournament_games`
+WHERE season <= 2017
+
+UNION ALL
+
+# create a separate row for the losing team
+SELECT
+# features
+  season,
+
+  'loss' AS label, # our label
+  lose_seed AS seed, # ranking
+  lose_school_ncaa AS school_ncaa,
+
+  win_seed AS opponent_seed, # ranking
+  win_school_ncaa AS opponent_school_ncaa
+
+FROM
+`bigquery-public-data.ncaa_basketball.mbb_historical_tournament_games`
+
+/* now we split our dataset with a WHERE clause so we can train on a subset of data and then evaluate and test the model's performance against a reserved subset so the model doesn't memorize or overfit to the training data.
+
+# tournament season information from 1985 - 2017
+# here we'll train on 1985 - 2017 and predict for 2018
+*/
+WHERE season <= 2017
+
+-- after viewing the model training stats we can see what the model learned about the features we used by viuewing the weights (to see if they are significant weights)
+
+SELECT
+  category,
+  weight
+FROM
+  UNNEST((
+    SELECT
+      category_weights
+    FROM
+      ML.WEIGHTS(MODEL `bracketology.ncaa_model`)
+    WHERE
+      processed_input = 'seed')) # try other features like 'school_ncaa'
+      ORDER BY weight DESC
+
+/* result set
+category	weight
+01	0.58388374410427812
+02	0.38294739129505906
+03	0.25638072363517889
+04	0.083681848292407643
+06	0.045950116454151271
+05	-0.0070051544303288624
+07	-0.015531722291875997
+08	-0.15311398815069865
+11	-0.1756164632813598
+10	-0.2104315941591508
+12	-0.25375053625834781
+09	-0.27464763340381
+13	-0.54998513880110145
+16	-0.65618301509117227
+14	-0.66040504525895982
+15	-0.71854237472467974
+*/
+-- not sure how we know which 'category' is whihc 'feature'...?
+
+-- task 8 - evaluate model performance--
+SELECT
+  *
+FROM
+  ML.EVALUATE(MODEL   `bracketology.ncaa_model`)
+
+  /*
+precision	recall	accuracy	f1_score	log_loss	roc_auc
+0.712468193384224	0.66193853427895977	0.69341317365269461	0.68627450980392157	0.57842239934512185	0.76591108891108894
+  */
+
+-- precision = 71%
+-- recall = 66%
+-- accuracy = 69%
+-- f1 score = 69%
+-- log loss = 58%
+-- reciever operation characteristic - area under curve (roc_auc) = 77%
+
+-- task 9 - making predictions (also know as inferencing)
+
+-- here we use the ML.PREDICT() sql function - the output is a dataset you can insert directly into a table (using a "create table as select...." style query)
+
+CREATE OR REPLACE TABLE `bracketology.predictions` AS (
+
+SELECT * FROM ML.PREDICT(MODEL `bracketology.ncaa_model`,
+
+# predicting for 2018 tournament games (2017 season)
+(SELECT * FROM `data-to-insights.ncaa.2018_tournament_results`)
+)
+)
+
+-- 
+
+
+
